@@ -4,7 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>สถิตินักเรียนมาเรียน</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#06c755">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="เช็คชื่อ">
 <style>
+  #install { display:none; background:#e8f9ef; border:2px solid var(--accent); }
+  #install button { width:100%; background:var(--accent); color:#fff; font-weight:bold; font-size:20px; padding:16px; }
+  #install .help { display:none; font-size:17px; line-height:1.7; margin-top:10px; }
+  #install .x { background:none; color:#555; font-size:14px; padding:6px; margin-top:4px; width:auto; font-weight:normal; }
   :root { --ink:#111; --blue:#1a3fb0; --red:#c0261d; --line:#222; --bg:#f2f3f5; --card:#fff; --accent:#06c755; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font-family:Tahoma,"Noto Sans Thai","Sarabun",sans-serif; }
@@ -49,6 +60,12 @@
 <body>
 <div class="wrap">
   <h1>สถิตินักเรียนมาเรียน</h1>
+
+  <div class="card" id="install">
+    <button id="installBtn">📲 ใส่ไว้หน้าจอมือถือ</button>
+    <div class="help" id="help"></div>
+    <button class="x" id="hideInstall">ไม่ต้องแสดงอีก</button>
+  </div>
 
   <div class="card row">
     <label>วันที่ <input type="date" id="date"></label>
@@ -242,6 +259,27 @@ $("share").onclick = async ()=>{
 };
 
 render();
+
+/* ---------- ใส่ไว้หน้าจอมือถือ ---------- */
+(function(){
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  let hidden=false; try { hidden = localStorage.getItem("hideInstall")==="1"; } catch(e){}
+  const box=$("install"), help=$("help"); let deferred=null;
+  const ua = navigator.userAgent, isIOS=/iPhone|iPad|iPod/.test(ua), isMobile=/Android|iPhone|iPad|iPod/.test(ua);
+  if (standalone || hidden || !isMobile) return;
+  box.style.display="block";
+  window.addEventListener("beforeinstallprompt", e=>{ e.preventDefault(); deferred=e; });
+  window.addEventListener("appinstalled", ()=>{ box.style.display="none"; });
+  $("installBtn").onclick = async ()=>{
+    if (deferred) { deferred.prompt(); await deferred.userChoice; deferred=null; return; }
+    help.style.display="block";
+    help.innerHTML = isIOS
+      ? "<b>บน iPhone:</b><br>1. กดปุ่ม <b>แชร์</b> (ไอคอนสี่เหลี่ยมมีลูกศรชี้ขึ้น) ด้านล่างจอ<br>2. เลื่อนลงแล้วกด <b>เพิ่มลงในหน้าจอโฮม</b><br>3. กด <b>เพิ่ม</b> (ต้องเปิดด้วย Safari)"
+      : "<b>บน Android:</b><br>1. กดปุ่ม <b>⋮</b> (สามจุด) มุมขวาบนของ Chrome<br>2. กด <b>เพิ่มไปยังหน้าจอหลัก</b> หรือ <b>ติดตั้งแอป</b><br>3. กด <b>เพิ่ม</b>";
+  };
+  $("hideInstall").onclick = ()=>{ box.style.display="none"; try{ localStorage.setItem("hideInstall","1"); }catch(e){} };
+})();
 </script>
 </body>
 </html>
