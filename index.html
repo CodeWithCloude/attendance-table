@@ -43,6 +43,11 @@
   details summary { cursor:pointer; font-weight:bold; }
   .cfg td input { width:60px; padding:6px; text-align:center; border:1px solid #bbb; border-radius:6px; }
   #preview { max-width:100%; border:1px solid #ccc; border-radius:8px; margin-top:8px; display:none; }
+  #modal { display:none; position:fixed; inset:0; background:#000b; z-index:20; align-items:center; justify-content:center; padding:12px; }
+  #modal .mbox { background:#fff; border-radius:14px; padding:14px; max-width:900px; width:100%; max-height:100%; overflow:auto; text-align:center; }
+  #modal p { font-size:18px; line-height:1.5; margin:0 0 10px; }
+  #modal img { width:100%; border:1px solid #ccc; border-radius:8px; margin-bottom:10px; -webkit-touch-callout:default; user-select:auto; }
+  #modal button { width:100%; max-width:none; }
   #toast { position:fixed; left:50%; bottom:80px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 16px; border-radius:20px; font-size:15px; display:none; z-index:9; }
   /* แนวนอน: ใช้พื้นที่เต็มจอ ตารางไม่ต้องเลื่อน */
   @media (orientation:landscape) {
@@ -98,7 +103,13 @@
   <button id="copy">คัดลอกรูป</button>
   <button id="save">บันทึกรูป</button>
 </div>
-<div id="toast"></div>
+<div id="modal">
+  <div class="mbox">
+    <p id="mStatus"></p>
+    <img id="mImg" alt="รูปตาราง">
+    <button id="mClose" class="main">ปิด</button>
+  </div>
+</div>
 
 <script>
 const KEY = "attendance-v1";
@@ -232,30 +243,45 @@ async function download(blob){
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=fname(); a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
-function toast(s){ const t=$("toast"); t.textContent=s; t.style.display="block"; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.display="none",3000); }
+/* หน้าต่างแสดงรูป + บอกผลทุกครั้ง: ถ้าปุ่มอัตโนมัติใช้ไม่ได้ ให้กดค้างที่รูปได้เสมอ */
+function showModal(blob, status){
+  if (showModal.url) URL.revokeObjectURL(showModal.url);
+  showModal.url = URL.createObjectURL(blob);
+  $("mImg").src = showModal.url;
+  $("mStatus").textContent = status;
+  $("modal").style.display = "flex";
+}
+$("mClose").onclick = ()=>{ $("modal").style.display="none"; };
+const pressHint = " หากต้องการ ให้กดค้างที่รูป แล้วเลือก คัดลอก / แชร์ / บันทึกรูปภาพ";
+async function getBlob(){
+  const b = await blobOf();
+  if (!b) throw new Error("สร้างรูปไม่สำเร็จ");
+  return b;
+}
 $("copy").onclick = async ()=>{
+  let blob;
+  try { blob = await getBlob(); } catch(e){ alert("สร้างรูปไม่สำเร็จ: "+e.message); return; }
   try {
-    // ส่ง Promise เข้า ClipboardItem ให้ iOS/Safari ยอมรับ
-    await navigator.clipboard.write([new ClipboardItem({"image/png": blobOf()})]);
-    toast("คัดลอกรูปแล้ว ไปวางใน LINE ได้เลย");
+    await navigator.clipboard.write([new ClipboardItem({"image/png": blob})]);
+    showModal(blob, "✅ คัดลอกรูปแล้ว ไปกดวางในแชท LINE ได้เลย");
   } catch(e) {
-    const blob = await blobOf();
-    const p = $("preview"); p.src = URL.createObjectURL(blob); p.style.display="block"; p.scrollIntoView({behavior:"smooth"});
-    toast("คัดลอกอัตโนมัติไม่ได้ ให้กดค้างที่รูปแล้วเลือกคัดลอก");
+    showModal(blob, "⚠ เครื่องนี้คัดลอกอัตโนมัติไม่ได้." + pressHint);
   }
 };
-$("save").onclick = async ()=>{ download(await blobOf()); };
+$("save").onclick = async ()=>{
+  let blob;
+  try { blob = await getBlob(); } catch(e){ alert("สร้างรูปไม่สำเร็จ: "+e.message); return; }
+  try { await download(blob); showModal(blob, "✅ สั่งบันทึกรูปแล้ว (ดูในโฟลเดอร์ดาวน์โหลด/รูปภาพ)." + pressHint); }
+  catch(e){ showModal(blob, "⚠ บันทึกอัตโนมัติไม่ได้." + pressHint); }
+};
 $("share").onclick = async ()=>{
-  const blob = await blobOf();
-  const file = new File([blob], fname(), {type:"image/png"});
+  let blob;
+  try { blob = await getBlob(); } catch(e){ alert("สร้างรูปไม่สำเร็จ: "+e.message); return; }
+  const file = new File([blob], "attendance.png", {type:"image/png"});
   if (navigator.canShare && navigator.canShare({files:[file]})) {
     try { await navigator.share({files:[file]}); return; } catch(e){ if (e.name==="AbortError") return; }
   }
-  // เครื่องที่แชร์ไฟล์ตรงๆ ไม่ได้ (เช่น คอมพิวเตอร์): แสดงรูปและบันทึกให้
-  const url = URL.createObjectURL(blob);
-  const p = $("preview"); p.src = url; p.style.display="block"; p.scrollIntoView({behavior:"smooth"});
-  download(blob);
-  alert("เครื่องนี้แชร์ตรงเข้า LINE ไม่ได้ จึงบันทึกรูปให้แล้ว นำรูปไปส่งใน LINE ได้เลย");
+  showModal(blob, "⚠ เครื่องนี้แชร์ตรงเข้า LINE ไม่ได้." + pressHint);
 };
 
 render();
