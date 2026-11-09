@@ -98,10 +98,7 @@
 </div>
 
 <div class="bar">
-  <button id="clear">ล้างค่า</button>
-  <button id="share" class="main">แชร์เข้า LINE</button>
-  <button id="copy">คัดลอกรูป</button>
-  <button id="save">บันทึกรูป</button>
+  <button id="save" class="main">บันทึกรูป</button>
 </div>
 <div id="modal">
   <div class="mbox">
@@ -204,7 +201,6 @@ $("grade").addEventListener("input", e=>{ st.grade = e.target.value.trim(); save
 dateEl.addEventListener("change", ()=>{ if(!dateEl.value) dateEl.value=todayStr(); });
 $("addRoom").onclick = ()=>{ st.rooms.push({b:0,g:0}); save(); render(); };
 $("delRoom").onclick = ()=>{ if(st.rooms.length>1){ st.rooms.pop(); st.pres.length=Math.min(st.pres.length,st.rooms.length); save(); render(); } };
-$("clear").onclick = ()=>{ if(confirm("ล้างจำนวนที่มาเรียนทั้งหมด?")){ st.pres=[]; save(); render(); } };
 
 /* ---------- วาดรูป PNG ---------- */
 function drawCanvas(){
@@ -258,30 +254,11 @@ async function getBlob(){
   if (!b) throw new Error("สร้างรูปไม่สำเร็จ");
   return b;
 }
-$("copy").onclick = async ()=>{
-  let blob;
-  try { blob = await getBlob(); } catch(e){ alert("สร้างรูปไม่สำเร็จ: "+e.message); return; }
-  try {
-    await navigator.clipboard.write([new ClipboardItem({"image/png": blob})]);
-    showModal(blob, "✅ คัดลอกรูปแล้ว ไปกดวางในแชท LINE ได้เลย");
-  } catch(e) {
-    showModal(blob, "⚠ เครื่องนี้คัดลอกอัตโนมัติไม่ได้." + pressHint);
-  }
-};
 $("save").onclick = async ()=>{
   let blob;
   try { blob = await getBlob(); } catch(e){ alert("สร้างรูปไม่สำเร็จ: "+e.message); return; }
   try { await download(blob); showModal(blob, "✅ สั่งบันทึกรูปแล้ว (ดูในโฟลเดอร์ดาวน์โหลด/รูปภาพ)." + pressHint); }
   catch(e){ showModal(blob, "⚠ บันทึกอัตโนมัติไม่ได้." + pressHint); }
-};
-$("share").onclick = async ()=>{
-  let blob;
-  try { blob = await getBlob(); } catch(e){ alert("สร้างรูปไม่สำเร็จ: "+e.message); return; }
-  const file = new File([blob], "attendance.png", {type:"image/png"});
-  if (navigator.canShare && navigator.canShare({files:[file]})) {
-    try { await navigator.share({files:[file]}); return; } catch(e){ if (e.name==="AbortError") return; }
-  }
-  showModal(blob, "⚠ เครื่องนี้แชร์ตรงเข้า LINE ไม่ได้." + pressHint);
 };
 
 render();
