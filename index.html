@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สถิตินักเรียนมาเรียน</title>
+<style>
+  :root { --ink:#111; --blue:#1a3fb0; --red:#c0261d; --line:#222; --bg:#f2f3f5; --card:#fff; --accent:#06c755; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:Tahoma,"Noto Sans Thai","Sarabun",sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:12px 16px 90px; }
+  h1 { font-size:18px; margin:8px 0 12px; }
+  .card { background:var(--card); border-radius:12px; padding:12px; margin-bottom:12px; box-shadow:0 1px 3px #0002; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  label { font-size:14px; }
+  input { font:inherit; }
+  input[type=date], input[type=text] { padding:8px; border:1px solid #bbb; border-radius:8px; }
+  .tablebox { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; min-width:560px; background:#fff; }
+  th, td { border:1.5px solid var(--line); text-align:center; padding:4px 2px; font-size:15px; }
+  th { background:#eef1f6; }
+  td.room { font-weight:bold; white-space:nowrap; padding:4px 8px; }
+  tr.sum td { font-weight:bold; background:#f7f7f7; }
+  td input.num { width:100%; max-width:64px; padding:8px 2px; text-align:center; font-size:18px; color:var(--blue); border:1px solid #9ab; border-radius:6px; }
+  td input.num.bad { border-color:var(--red); background:#ffe3e1; }
+  .abs { color:var(--red); }
+  .pres { color:var(--blue); }
+  .warn { color:var(--red); font-size:14px; min-height:20px; margin:6px 0 0; }
+  .bar { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid #ccc; padding:10px 16px; display:flex; gap:8px; justify-content:center; }
+  button { font:inherit; font-size:16px; border:0; border-radius:10px; padding:12px 18px; background:#e3e5ea; cursor:pointer; }
+  button.main { background:var(--accent); color:#fff; font-weight:bold; flex:1; max-width:340px; }
+  details summary { cursor:pointer; font-weight:bold; }
+  .cfg td input { width:60px; padding:6px; text-align:center; border:1px solid #bbb; border-radius:6px; }
+  #preview { max-width:100%; border:1px solid #ccc; border-radius:8px; margin-top:8px; display:none; }
+  #toast { position:fixed; left:50%; bottom:80px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 16px; border-radius:20px; font-size:15px; display:none; z-index:9; }
+  /* แนวนอน: ใช้พื้นที่เต็มจอ ตารางไม่ต้องเลื่อน */
+  @media (orientation:landscape) {
+    .wrap { max-width:1100px; padding:6px 12px 70px; }
+    h1 { display:none; }
+    table { min-width:0; }
+    th, td { font-size:14px; padding:2px; }
+    td input.num { padding:4px 2px; font-size:17px; }
+    .card { padding:8px; margin-bottom:8px; }
+    .bar { padding:6px 12px; }
+    button { padding:8px 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>สถิตินักเรียนมาเรียน</h1>
+
+  <div class="card row">
+    <label>วันที่ <input type="date" id="date"></label>
+    <label>ชั้น ป. <input type="text" id="grade" size="3" style="width:60px"></label>
+  </div>
+
+  <div class="card">
+    <div class="tablebox">
+      <table id="tbl"></table>
+    </div>
+    <p class="warn" id="warn"></p>
+    <p style="font-size:13px;color:#555;margin:6px 0 0">กรอกเฉพาะช่องสีน้ำเงิน (ชายและหญิงที่มาเรียน) ที่เหลือคำนวณให้อัตโนมัติ</p>
+  </div>
+
+  <details class="card cfg">
+    <summary>ตั้งค่าจำนวนนักเรียนทั้งหมด (ตั้งครั้งเดียว)</summary>
+    <div id="cfg" style="margin-top:10px"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="addRoom">+ เพิ่มห้อง</button>
+      <button id="delRoom">− ลบห้องสุดท้าย</button>
+    </div>
+  </details>
+
+  <img id="preview" alt="ตัวอย่างรูป">
+</div>
+
+<div class="bar">
+  <button id="clear">ล้างค่า</button>
+  <button id="share" class="main">แชร์เข้า LINE</button>
+  <button id="copy">คัดลอกรูป</button>
+  <button id="save">บันทึกรูป</button>
+</div>
+<div id="toast"></div>
+
+<script>
+const KEY = "attendance-v1";
+const DAYS = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
+const MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+
+let st = { grade:"3", rooms:[{b:17,g:9},{b:18,g:10},{b:14,g:11},{b:15,g:11}], pres:[] };
+try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.rooms) st = s; } catch(e){}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(st)); } catch(e){} }
+
+const $ = id => document.getElementById(id);
+const dateEl = $("date");
+function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+dateEl.value = todayStr();
+$("grade").value = st.grade;
+
+function thaiDate(){
+  const [y,m,d] = dateEl.value.split("-").map(Number);
+  const dt = new Date(y,m-1,d);
+  return { day:DAYS[dt.getDay()], d, month:MONTHS[m-1], year:y+543 };
+}
+const val = v => (v === "" || v == null) ? null : Number(v);
+
+function compute(){
+  const rows = st.rooms.map((r,i)=>{
+    const p = st.pres[i] || {};
+    const pb = val(p.b), pg = val(p.g);
+    const filled = pb!=null && pg!=null;
+    return { name:`ป.${st.grade}/${i+1}`, tb:r.b, tg:r.g, tt:r.b+r.g,
+      pb, pg, filled,
+      pt: filled ? pb+pg : null,
+      ab: filled ? r.b-pb : null, ag: filled ? r.g-pg : null,
+      at: filled ? (r.b-pb)+(r.g-pg) : null,
+      bad: filled && (pb>r.b || pg>r.g || pb<0 || pg<0) };
+  });
+  const S = k => rows.reduce((a,r)=>a+(r[k]||0),0);
+  const total = { name:"รวม", tb:S("tb"), tg:S("tg"), tt:S("tt"), pb:S("pb"), pg:S("pg"), pt:S("pt"), ab:S("ab"), ag:S("ag"), at:S("at") };
+  return { rows, total };
+}
+const f = v => v==null ? "" : v;
+
+function render(){
+  const {rows,total} = compute();
+  let h = `<tr><th rowspan="3">ชั้น</th><th colspan="3">จำนวนทั้งหมด</th><th colspan="3">มาเรียน</th><th colspan="3">ไม่มาเรียน</th></tr>
+  <tr>${"<th>ชาย</th><th>หญิง</th><th>รวม</th>".repeat(3)}</tr>`;
+  h = h.replace('<th rowspan="3">','<th rowspan="2">');
+  rows.forEach((r,i)=>{
+    const p = st.pres[i] || {};
+    h += `<tr><td class="room">${r.name}</td><td>${r.tb}</td><td>${r.tg}</td><td>${r.tt}</td>
+    <td><input class="num ${r.bad?'bad':''}" inputmode="numeric" data-i="${i}" data-k="b" value="${f(p.b)}"></td>
+    <td><input class="num ${r.bad?'bad':''}" inputmode="numeric" data-i="${i}" data-k="g" value="${f(p.g)}"></td>
+    <td class="pres">${f(r.pt)}</td>
+    <td class="abs">${f(r.ab)}</td><td class="abs">${f(r.ag)}</td><td class="abs">${f(r.at)}</td></tr>`;
+  });
+  h += `<tr class="sum"><td>รวม</td><td>${total.tb}</td><td>${total.tg}</td><td>${total.tt}</td>
+    <td class="pres">${total.pb}</td><td class="pres">${total.pg}</td><td class="pres">${total.pt}</td>
+    <td class="abs">${total.ab}</td><td class="abs">${total.ag}</td><td class="abs">${total.at}</td></tr>`;
+  $("tbl").innerHTML = h;
+  $("warn").textContent = rows.some(r=>r.bad) ? "⚠ มีห้องที่จำนวนที่มาเรียนมากกว่าจำนวนทั้งหมด กรุณาตรวจสอบ" : "";
+  $("tbl").querySelectorAll("input.num").forEach(el=>{
+    el.addEventListener("input", ()=>{
+      const i = +el.dataset.i;
+      st.pres[i] = st.pres[i] || {};
+      st.pres[i][el.dataset.k] = el.value.replace(/\D/g,"");
+      save();
+      const focus = {i:el.dataset.i,k:el.dataset.k};
+      render();
+      const n = document.querySelector(`input[data-i="${focus.i}"][data-k="${focus.k}"]`);
+      if (n){ n.focus(); n.setSelectionRange(n.value.length,n.value.length); }
+    });
+  });
+  renderCfg();
+}
+
+function renderCfg(){
+  let h = `<table><tr><th>ห้อง</th><th>ชายทั้งหมด</th><th>หญิงทั้งหมด</th></tr>`;
+  st.rooms.forEach((r,i)=>{
+    h += `<tr><td class="room">ป.${st.grade}/${i+1}</td>
+    <td><input inputmode="numeric" data-ci="${i}" data-ck="b" value="${r.b}"></td>
+    <td><input inputmode="numeric" data-ci="${i}" data-ck="g" value="${r.g}"></td></tr>`;
+  });
+  $("cfg").innerHTML = h + "</table>";
+  $("cfg").querySelectorAll("input").forEach(el=>{
+    el.addEventListener("change", ()=>{
+      st.rooms[+el.dataset.ci][el.dataset.ck] = Number(el.value.replace(/\D/g,""))||0;
+      save(); render();
+    });
+  });
+}
+
+$("grade").addEventListener("input", e=>{ st.grade = e.target.value.trim(); save(); render(); });
+dateEl.addEventListener("change", ()=>{ if(!dateEl.value) dateEl.value=todayStr(); });
+$("addRoom").onclick = ()=>{ st.rooms.push({b:0,g:0}); save(); render(); };
+$("delRoom").onclick = ()=>{ if(st.rooms.length>1){ st.rooms.pop(); st.pres.length=Math.min(st.pres.length,st.rooms.length); save(); render(); } };
+$("clear").onclick = ()=>{ if(confirm("ล้างจำนวนที่มาเรียนทั้งหมด?")){ st.pres=[]; save(); render(); } };
+
+/* ---------- วาดรูป PNG ---------- */
+function drawCanvas(){
+  const {rows,total} = compute();
+  const W=1400, left=150, cw=(W-left)/9, rh=84, top=130;
+  const nRows = rows.length+1, H = top + 2*rh + nRows*rh + 40;
+  const c = document.createElement("canvas"); c.width=W; c.height=H;
+  const x = c.getContext("2d");
+  const FONT = 'Tahoma,"Noto Sans Thai",sans-serif';
+  x.fillStyle="#fff"; x.fillRect(0,0,W,H);
+  x.strokeStyle="#222"; x.lineWidth=3; x.fillStyle="#111"; x.textAlign="center"; x.textBaseline="middle";
+  const t = thaiDate();
+  x.font=`bold 36px ${FONT}`;
+  x.fillText(`สถิตินักเรียนชั้นประถมศึกษาปีที่ ${st.grade}   วัน${t.day} ที่ ${t.d} เดือน${t.month} พ.ศ. ${t.year}`, W/2, 55);
+  const cellBox = (cx,cy,w,h,fill)=>{ if(fill){x.fillStyle=fill;x.fillRect(cx,cy,w,h);} x.strokeRect(cx,cy,w,h); };
+  const txt = (s,cx,cy,w,h,color,bold,size)=>{ x.fillStyle=color||"#111"; x.font=`${bold?"bold ":""}${size||38}px ${FONT}`; x.fillText(String(s),cx+w/2,cy+h/2+2); };
+  // header
+  cellBox(0,top,left,2*rh,"#eef1f6"); txt("ชั้น",0,top,left,2*rh,"#111",true);
+  ["จำนวนทั้งหมด","มาเรียน","ไม่มาเรียน"].forEach((s,g)=>{
+    cellBox(left+g*3*cw,top,3*cw,rh,"#eef1f6"); txt(s,left+g*3*cw,top,3*cw,rh,"#111",true);
+    ["ชาย","หญิง","รวม"].forEach((u,j)=>{ cellBox(left+(g*3+j)*cw,top+rh,cw,rh,"#eef1f6"); txt(u,left+(g*3+j)*cw,top+rh,cw,rh,"#111",true); });
+  });
+  const all = rows.concat([Object.assign({}, total, {sum:true})]);
+  all.forEach((r,i)=>{
+    const y = top+2*rh+i*rh;
+    const bg = r.sum ? "#f1f1f1" : null;
+    cellBox(0,y,left,rh,bg); txt(r.name,0,y,left,rh,"#111",true,36);
+    const cells = [[r.tb,"#111"],[r.tg,"#111"],[r.tt,"#111"],[r.pb,"#1a3fb0"],[r.pg,"#1a3fb0"],[r.pt,"#1a3fb0"],[r.ab,"#c0261d"],[r.ag,"#c0261d"],[r.at,"#c0261d"]];
+    cells.forEach(([v,col],j)=>{ cellBox(left+j*cw,y,cw,rh,bg); txt(f(v),left+j*cw,y,cw,rh,col,!!r.sum||j>=3,44); });
+  });
+  return c;
+}
+function blobOf(){ return new Promise(res=>drawCanvas().toBlob(res,"image/png")); }
+function fname(){ return `สถิตินักเรียน_ป${st.grade}_${dateEl.value}.png`; }
+async function download(blob){
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=fname(); a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function toast(s){ const t=$("toast"); t.textContent=s; t.style.display="block"; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.display="none",3000); }
+$("copy").onclick = async ()=>{
+  try {
+    // ส่ง Promise เข้า ClipboardItem ให้ iOS/Safari ยอมรับ
+    await navigator.clipboard.write([new ClipboardItem({"image/png": blobOf()})]);
+    toast("คัดลอกรูปแล้ว ไปวางใน LINE ได้เลย");
+  } catch(e) {
+    const blob = await blobOf();
+    const p = $("preview"); p.src = URL.createObjectURL(blob); p.style.display="block"; p.scrollIntoView({behavior:"smooth"});
+    toast("คัดลอกอัตโนมัติไม่ได้ ให้กดค้างที่รูปแล้วเลือกคัดลอก");
+  }
+};
+$("save").onclick = async ()=>{ download(await blobOf()); };
+$("share").onclick = async ()=>{
+  const blob = await blobOf();
+  const file = new File([blob], fname(), {type:"image/png"});
+  if (navigator.canShare && navigator.canShare({files:[file]})) {
+    try { await navigator.share({files:[file]}); return; } catch(e){ if (e.name==="AbortError") return; }
+  }
+  // เครื่องที่แชร์ไฟล์ตรงๆ ไม่ได้ (เช่น คอมพิวเตอร์): แสดงรูปและบันทึกให้
+  const url = URL.createObjectURL(blob);
+  const p = $("preview"); p.src = url; p.style.display="block"; p.scrollIntoView({behavior:"smooth"});
+  download(blob);
+  alert("เครื่องนี้แชร์ตรงเข้า LINE ไม่ได้ จึงบันทึกรูปให้แล้ว นำรูปไปส่งใน LINE ได้เลย");
+};
+
+render();
+</script>
+</body>
+</html>
