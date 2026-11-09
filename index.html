@@ -213,10 +213,11 @@ function drawCanvas(){
   x.fillStyle="#fff"; x.fillRect(0,0,W,H);
   x.strokeStyle="#222"; x.lineWidth=3; x.fillStyle="#111"; x.textAlign="center"; x.textBaseline="middle";
   const t = thaiDate();
-  x.font=`bold 36px ${FONT}`;
-  x.fillText(`สถิตินักเรียนชั้นประถมศึกษาปีที่ ${st.grade}   วัน${t.day} ที่ ${t.d} เดือน${t.month} พ.ศ. ${t.year}`, W/2, 55);
   const cellBox = (cx,cy,w,h,fill)=>{ if(fill){x.fillStyle=fill;x.fillRect(cx,cy,w,h);} x.strokeRect(cx,cy,w,h); };
-  const txt = (s,cx,cy,w,h,color,bold,size)=>{ x.fillStyle=color||"#111"; x.font=`${bold?"bold ":""}${size||38}px ${FONT}`; x.fillText(String(s),cx+w/2,cy+h/2+2); };
+  /* ย่อขนาดตัวอักษรให้พอดีช่องเสมอ — ไม่ขึ้นกับฟอนต์/ขนาดจอของเครื่อง */
+  const fit = (s,maxW,size,bold)=>{ let z=size; do { x.font=`${bold?"bold ":""}${z}px ${FONT}`; z-=2; } while (x.measureText(s).width>maxW && z>12); };
+  const txt = (s,cx,cy,w,h,color,bold,size)=>{ s=String(s); x.fillStyle=color||"#111"; fit(s,w-16,size||38,bold); x.fillText(s,cx+w/2,cy+h/2+2); };
+  { const title=`สถิตินักเรียนชั้นประถมศึกษาปีที่ ${st.grade}   วัน${t.day} ที่ ${t.d} เดือน${t.month} พ.ศ. ${t.year}`; fit(title,W-40,36,true); x.fillText(title, W/2, 55); }
   // header
   cellBox(0,top,left,2*rh,"#eef1f6"); txt("ชั้น",0,top,left,2*rh,"#111",true);
   ["จำนวนทั้งหมด","มาเรียน","ไม่มาเรียน"].forEach((s,g)=>{
