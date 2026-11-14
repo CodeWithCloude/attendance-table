@@ -82,7 +82,7 @@
       <table id="tbl"></table>
     </div>
     <p class="warn" id="warn"></p>
-    <p style="font-size:13px;color:#555;margin:6px 0 0">กรอกเฉพาะช่องสีน้ำเงิน (ชายและหญิงที่มาเรียน) ที่เหลือคำนวณให้อัตโนมัติ</p>
+    <p style="font-size:13px;color:#555;margin:6px 0 0">กรอกเฉพาะช่องสีน้ำเงิน (ชายและหญิงที่ไม่มาเรียน ถ้ามาครบเว้นว่างไว้ได้) ที่เหลือคำนวณให้อัตโนมัติ</p>
   </div>
 
   <details class="card cfg">
@@ -113,8 +113,17 @@ const KEY = "attendance-v1";
 const DAYS = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
 const MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 
-let st = { grade:"3", rooms:[{b:17,g:9},{b:18,g:10},{b:14,g:11},{b:15,g:11}], pres:[] };
+let st = { grade:"3", rooms:[{b:17,g:9},{b:18,g:10},{b:14,g:11},{b:15,g:11}], abs:[] };
 try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.rooms) st = s; } catch(e){}
+/* ข้อมูลเก่าเก็บจำนวน "มาเรียน" (pres) → แปลงเป็น "ไม่มาเรียน" (abs) */
+if (!st.abs) {
+  st.abs = (st.pres || []).map((p,i)=>{
+    const r = st.rooms[i] || {b:0,g:0}, o = {};
+    ["b","g"].forEach(k=>{ if (p && p[k] !== "" && p[k] != null) o[k] = String(Math.max(0, r[k] - Number(p[k]))); });
+    return o;
+  });
+  delete st.pres;
+}
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(st)); } catch(e){} }
 
 const $ = id => document.getElementById(id);
@@ -132,15 +141,13 @@ const val = v => (v === "" || v == null) ? null : Number(v);
 
 function compute(){
   const rows = st.rooms.map((r,i)=>{
-    const p = st.pres[i] || {};
-    const pb = val(p.b), pg = val(p.g);
-    const filled = pb!=null && pg!=null;
+    const a = st.abs[i] || {};
+    const ab = val(a.b) ?? 0, ag = val(a.g) ?? 0; // ช่องว่าง = ไม่มีคนขาด
+    const pb = r.b-ab, pg = r.g-ag;
     return { name:`ป.${st.grade}/${i+1}`, tb:r.b, tg:r.g, tt:r.b+r.g,
-      pb, pg, filled,
-      pt: filled ? pb+pg : null,
-      ab: filled ? r.b-pb : null, ag: filled ? r.g-pg : null,
-      at: filled ? (r.b-pb)+(r.g-pg) : null,
-      bad: filled && (pb>r.b || pg>r.g || pb<0 || pg<0) };
+      pb, pg, pt: pb+pg,
+      ab, ag, at: ab+ag,
+      bad: ab>r.b || ag>r.g };
   });
   const S = k => rows.reduce((a,r)=>a+(r[k]||0),0);
   const total = { name:"รวม", tb:S("tb"), tg:S("tg"), tt:S("tt"), pb:S("pb"), pg:S("pg"), pt:S("pt"), ab:S("ab"), ag:S("ag"), at:S("at") };
@@ -154,23 +161,23 @@ function render(){
   <tr>${"<th>ชาย</th><th>หญิง</th><th>รวม</th>".repeat(3)}</tr>`;
   h = h.replace('<th rowspan="3">','<th rowspan="2">');
   rows.forEach((r,i)=>{
-    const p = st.pres[i] || {};
+    const a = st.abs[i] || {};
     h += `<tr><td class="room">${r.name}</td><td>${r.tb}</td><td>${r.tg}</td><td>${r.tt}</td>
-    <td><input class="num ${r.bad?'bad':''}" inputmode="numeric" data-i="${i}" data-k="b" value="${f(p.b)}"></td>
-    <td><input class="num ${r.bad?'bad':''}" inputmode="numeric" data-i="${i}" data-k="g" value="${f(p.g)}"></td>
-    <td class="pres">${f(r.pt)}</td>
-    <td class="abs">${f(r.ab)}</td><td class="abs">${f(r.ag)}</td><td class="abs">${f(r.at)}</td></tr>`;
+    <td class="pres">${f(r.pb)}</td><td class="pres">${f(r.pg)}</td><td class="pres">${f(r.pt)}</td>
+    <td><input class="num ${r.bad?'bad':''}" inputmode="numeric" data-i="${i}" data-k="b" value="${f(a.b)}" placeholder="0"></td>
+    <td><input class="num ${r.bad?'bad':''}" inputmode="numeric" data-i="${i}" data-k="g" value="${f(a.g)}" placeholder="0"></td>
+    <td class="abs">${f(r.at)}</td></tr>`;
   });
   h += `<tr class="sum"><td>รวม</td><td>${total.tb}</td><td>${total.tg}</td><td>${total.tt}</td>
     <td class="pres">${total.pb}</td><td class="pres">${total.pg}</td><td class="pres">${total.pt}</td>
     <td class="abs">${total.ab}</td><td class="abs">${total.ag}</td><td class="abs">${total.at}</td></tr>`;
   $("tbl").innerHTML = h;
-  $("warn").textContent = rows.some(r=>r.bad) ? "⚠ มีห้องที่จำนวนที่มาเรียนมากกว่าจำนวนทั้งหมด กรุณาตรวจสอบ" : "";
+  $("warn").textContent = rows.some(r=>r.bad) ? "⚠ มีห้องที่จำนวนที่ไม่มาเรียนมากกว่าจำนวนทั้งหมด กรุณาตรวจสอบ" : "";
   $("tbl").querySelectorAll("input.num").forEach(el=>{
     el.addEventListener("input", ()=>{
       const i = +el.dataset.i;
-      st.pres[i] = st.pres[i] || {};
-      st.pres[i][el.dataset.k] = el.value.replace(/\D/g,"");
+      st.abs[i] = st.abs[i] || {};
+      st.abs[i][el.dataset.k] = el.value.replace(/\D/g,"");
       save();
       const focus = {i:el.dataset.i,k:el.dataset.k};
       render();
@@ -200,7 +207,7 @@ function renderCfg(){
 $("grade").addEventListener("input", e=>{ st.grade = e.target.value.trim(); save(); render(); });
 dateEl.addEventListener("change", ()=>{ if(!dateEl.value) dateEl.value=todayStr(); });
 $("addRoom").onclick = ()=>{ st.rooms.push({b:0,g:0}); save(); render(); };
-$("delRoom").onclick = ()=>{ if(st.rooms.length>1){ st.rooms.pop(); st.pres.length=Math.min(st.pres.length,st.rooms.length); save(); render(); } };
+$("delRoom").onclick = ()=>{ if(st.rooms.length>1){ st.rooms.pop(); st.abs.length=Math.min(st.abs.length,st.rooms.length); save(); render(); } };
 
 /* ---------- วาดรูป PNG ---------- */
 function drawCanvas(){
